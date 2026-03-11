@@ -1,0 +1,6 @@
+scrapy
+pymongo
+nltk
+networkx
+transformers
+torch
