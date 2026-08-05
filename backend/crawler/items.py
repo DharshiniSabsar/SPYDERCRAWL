@@ -6,3 +6,4 @@ class MarketItem(scrapy.Item):
     price = scrapy.Field()
     vendor = scrapy.Field()
     url = scrapy.Field()
+    images = scrapy.Field()

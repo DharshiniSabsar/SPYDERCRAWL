@@ -4,6 +4,13 @@ import networkx as nx
 import pandas as pd
 from styles import apply_styles
 from db_reader import load_market_data
+import sys
+import os
+
+# Add project root to Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from backend.nlp.image_classifier import classify_image_from_pil
 
 # -------------------------------------------------
 # PAGE CONFIG
@@ -17,7 +24,57 @@ st.set_page_config(
 apply_styles()
 
 # -------------------------------------------------
-# SESSION STATE DEFAULTS
+# 🔥 CUSTOM UI STYLES (Glow + Gradient)
+# -------------------------------------------------
+st.markdown("""
+<style>
+hr { display: none; }
+
+.alert-card {
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin-bottom: 14px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+/* 🔴 HIGH */
+.alert-high {
+    background: linear-gradient(90deg, #2a0f0f, #4b1a1a);
+    border-left: 5px solid #ff4b4b;
+}
+
+/* 🟠 MEDIUM */
+.alert-medium {
+    background: linear-gradient(90deg, #2a1f0f, #4b341a);
+    border-left: 5px solid #ffb347;
+}
+
+/* 🟢 LOW */
+.alert-low {
+    background: linear-gradient(90deg, #0f2a1a, #1a4b2e);
+    border-left: 5px solid #4bff88;
+}
+
+/* ✨ HOVER GLOW */
+.alert-card:hover {
+    transform: scale(1.015);
+    box-shadow: 0 0 18px rgba(255, 75, 75, 0.35);
+}
+
+/* clickable links */
+.alert-link {
+    color: #ff6b6b;
+    text-decoration: none;
+}
+.alert-link:hover {
+    text-decoration: underline;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------
+# SESSION STATE
 # -------------------------------------------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -25,41 +82,35 @@ if "authenticated" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "login"
 
+
 def go_to(page):
     st.session_state.page = page
     st.rerun()
 
+
 # -------------------------------------------------
-# NAV BAR (shown on all authenticated pages)
+# NAV BAR
 # -------------------------------------------------
 def nav_bar(current):
-    st.markdown("""
-        <style>
-        div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {
-            width: 100%;
-            white-space: nowrap;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns([4, 2, 2, 2])
 
-    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([4, 0.5, 2, 2])
-    with col_nav1:
+    with col1:
         st.markdown("### 🕷️ SpyderCrawl")
-    with col_nav3:
-        if st.button(
-            "📊 Intelligence",
-            disabled=(current == "dashboard"),
-            use_container_width=True
-        ):
+
+    with col2:
+        if st.button("📊 Intelligence", disabled=current == "dashboard", use_container_width=True):
             go_to("dashboard")
-    with col_nav4:
-        if st.button(
-            "📈 Analytics",
-            disabled=(current == "analytics"),
-            use_container_width=True
-        ):
+
+    with col3:
+        if st.button("📈 Analytics", disabled=current == "analytics", use_container_width=True):
             go_to("analytics")
+
+    with col4:
+        if st.button("🖼️ Images", disabled=current == "images", use_container_width=True):
+            go_to("images")
+
     st.markdown("---")
+
 
 # -------------------------------------------------
 # PAGE: LOGIN
@@ -68,20 +119,41 @@ def page_login():
     st.title("🕷️ SpyderCrawl")
     st.subheader("Biohacking Intelligence & Threat Monitoring Platform")
 
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
 
-        if st.button("Login"):
-            if username == "admin" and password == "spydercrawl":
-                st.session_state.authenticated = True
-                go_to("dashboard")
-            else:
-                st.error("Invalid credentials")
+    if st.button("Login"):
+        if username == "admin" and password == "spydercrawl":
+            st.session_state.authenticated = True
+            go_to("dashboard")
+        else:
+            st.error("Invalid credentials")
+
 
 # -------------------------------------------------
-# PAGE: INTELLIGENCE DASHBOARD (app1)
+# ALERT CARD RENDER FUNCTION
+# -------------------------------------------------
+def render_alert(row):
+    level = row["Threat Level"]
+
+    if level == "HIGH":
+        css_class = "alert-high"
+    elif level == "MEDIUM":
+        css_class = "alert-medium"
+    else:
+        css_class = "alert-low"
+
+    st.markdown(f"""
+    <div class="alert-card {css_class}">
+        🔴 <b>{level}-RISK ALERT</b><br><br>
+        <b>Vendor:</b> {row['Vendor']}<br>
+        <b>URL:</b> <a href="{row['URL']}" target="_blank" class="alert-link">{row['URL']}</a>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# -------------------------------------------------
+# DASHBOARD
 # -------------------------------------------------
 def page_dashboard():
     nav_bar("dashboard")
@@ -90,10 +162,9 @@ def page_dashboard():
     data = load_market_data()
 
     if data.empty:
-        st.info("No biohacking intelligence collected yet. Run `scrapy crawl market`.")
+        st.info("No data available.")
         return
 
-    # KPI CARDS
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Pages Monitored", len(data))
     c2.metric("High-Risk Pages", len(data[data["Threat Level"] == "HIGH"]))
@@ -102,74 +173,89 @@ def page_dashboard():
 
     st.markdown("---")
 
-    # INTELLIGENCE FEED TABLE
     st.subheader("🔍 Intelligence Feed")
-    st.dataframe(
-        data[["Title", "Vendor", "Threat Level", "URL"]],
-        use_container_width=True
-    )
+    st.dataframe(data[["Title", "Vendor", "Threat Level", "URL"]])
 
     st.markdown("---")
 
-    # TOP 10 ALERTS
+    # ---------------- ALERTS ----------------
     st.subheader("🚨 Top 10 High-Risk Alerts")
 
-    high_risk = data[data["Threat Level"] == "HIGH"].reset_index(drop=True)
+    high_risk = data[data["Threat Level"] == "HIGH"]
 
     if high_risk.empty:
-        st.success("No high-risk biohacking activity detected.")
-    else:
-        top10 = high_risk.head(10)
+        st.success("No high-risk activity.")
+        return
 
-        for _, row in top10.iterrows():
-            st.warning(
-                f"""
-                {row['URL']}
-                """
-            )
+    top10 = high_risk.head(10)
 
-        total_alerts = len(high_risk)
+    for _, row in top10.iterrows():
+        st.warning(row["URL"])
 
-        if total_alerts > 10:
-            st.markdown(f"*Showing 10 of **{total_alerts}** high-risk alerts.*")
-            if st.button(f"🔍 See all {total_alerts} alerts →"):
-                go_to("alerts")
-        else:
-            st.markdown(f"*Showing all **{total_alerts}** high-risk alerts.*")
+    total_alerts = len(high_risk)
+
+    if total_alerts > 10:
+        st.markdown(f"*Showing 10 of {total_alerts} alerts*")
+
+        if st.button(f"🔍 See all {total_alerts} alerts →"):
+            go_to("alerts")
+
 
 # -------------------------------------------------
-# PAGE: ANALYTICS & VISUALISATIONS (app2)
+# ALERTS PAGE
+# -------------------------------------------------
+def page_alerts():
+    nav_bar("alerts")
+    st.title("🚨 All High-Risk Alerts")
+
+    data = load_market_data()
+    alerts = data[data["Threat Level"] == "HIGH"]
+
+    if alerts.empty:
+        st.success("No high-risk activity.")
+        return
+
+    search = st.text_input("🔍 Search alerts")
+
+    if search:
+        alerts = alerts[
+            alerts.apply(
+                lambda row: search.lower() in str(row["Vendor"]).lower()
+                or search.lower() in str(row["URL"]).lower()
+                or search.lower() in str(row["Title"]).lower(),
+                axis=1
+            )
+        ]
+
+    st.markdown(f"### Showing {len(alerts)} results")
+
+    for _, row in alerts.iterrows():
+        render_alert(row)
+
+    if st.button("⬅️ Back to Dashboard"):
+        go_to("dashboard")
+
+
+# -------------------------------------------------
+# ANALYTICS
 # -------------------------------------------------
 def page_analytics():
     nav_bar("analytics")
-    st.title("📈 Analytics & Visualisations")
+    st.title("📈 Analytics")
 
     data = load_market_data()
 
     if data.empty:
-        st.info("No biohacking intelligence collected yet. Run `scrapy crawl market`.")
         return
 
-    # TIMELINE
-    st.subheader("📈 Biohacking Activity Timeline")
-
     timeline_df = (
-        data
-        .groupby(pd.Grouper(key="Timestamp", freq="D"))
+        data.groupby(pd.Grouper(key="Timestamp", freq="D"))
         .size()
         .reset_index(name="Pages")
     )
 
-    fig_timeline = px.line(
-        timeline_df,
-        x="Timestamp",
-        y="Pages",
-        markers=True,
-        title="Biohacking Intelligence Over Time"
-    )
-    st.plotly_chart(fig_timeline, use_container_width=True)
-
-    st.markdown("---")
+    fig = px.line(timeline_df, x="Timestamp", y="Pages")
+    st.plotly_chart(fig)
 
     # HEATMAP
     st.subheader("🔥 Domain-wise Risk Heatmap")
@@ -293,75 +379,39 @@ def page_analytics():
     </div>
     """, unsafe_allow_html=True)
 
-# -------------------------------------------------
-# PAGE: ALL ALERTS
-# -------------------------------------------------
-def page_alerts():
-    st.markdown("""
-        <style>
-        div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {
-            width: 100%;
-            white-space: nowrap;
-        }
-        </style>
-    """, unsafe_allow_html=True)
 
-    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([4, 0.5, 2, 2])
-    with col_nav1:
-        st.markdown("### 🕷️ SpyderCrawl")
-    with col_nav3:
-        if st.button("← Intelligence Dashboard", use_container_width=True):
-            go_to("dashboard")
-    with col_nav4:
-        if st.button("📈 Analytics", use_container_width=True):
-            go_to("analytics")
-    st.markdown("---")
+# -------------------------------------------------
+# IMAGES
+# -------------------------------------------------
+def page_images():
+    nav_bar("images")
+    st.title("🖼️ Image Intelligence")
 
-    st.title("🚨 All High-Risk Alerts")
+    from pymongo import MongoClient
+    import gridfs
+    from PIL import Image
+    import io
+    from bson import ObjectId
+
+    client = MongoClient("mongodb://localhost:27017")
+    db = client.spydercrawl
+    fs = gridfs.GridFS(db)
 
     data = load_market_data()
+    high = data[data["Threat Level"] == "HIGH"]
 
-    if data.empty:
-        st.info("No biohacking intelligence collected yet. Run `scrapy crawl market`.")
-        return
+    for _, row in high.iterrows():
+        for img_id in row.get("image_ids", [])[:2]:
+            try:
+                image_bytes = fs.get(ObjectId(img_id)).read()
+                image = Image.open(io.BytesIO(image_bytes))
 
-    high_risk = data[data["Threat Level"] == "HIGH"].reset_index(drop=True)
+                if classify_image_from_pil(image) == "HIGH":
+                    st.image(image, width=250)
 
-    if high_risk.empty:
-        st.success("No high-risk biohacking activity detected.")
-        return
+            except:
+                continue
 
-    st.markdown(f"**{len(high_risk)} high-risk alert(s) detected.**")
-    st.markdown("---")
-
-    search_query = st.text_input("🔎 Filter alerts by keyword (title, vendor, or URL)")
-
-    if search_query:
-        mask = (
-            high_risk["Title"].str.contains(search_query, case=False, na=False)
-            | high_risk["Vendor"].str.contains(search_query, case=False, na=False)
-            | high_risk["URL"].str.contains(search_query, case=False, na=False)
-        )
-        filtered = high_risk[mask]
-    else:
-        filtered = high_risk
-
-    if filtered.empty:
-        st.warning("No alerts match your search.")
-        return
-
-    st.markdown(f"*Showing **{len(filtered)}** alert(s).*")
-
-    for _, row in filtered.iterrows():
-        st.warning(
-            f"""
-            **High-Risk Biohacking Activity Detected**
-
-            • **Source:** {row['Vendor']}  
-            • **Title:** {row['Title']}  
-            • **URL:** {row['URL']}
-            """
-        )
 
 # -------------------------------------------------
 # ROUTER
@@ -373,6 +423,8 @@ else:
         page_dashboard()
     elif st.session_state.page == "analytics":
         page_analytics()
+    elif st.session_state.page == "images":
+        page_images()
     elif st.session_state.page == "alerts":
         page_alerts()
     else:

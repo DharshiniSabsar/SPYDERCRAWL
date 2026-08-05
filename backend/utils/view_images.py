@@ -1,13 +1,3 @@
-from db.mongo import MongoDB
-from nlp.cti_classifier import classify_threat
-from nlp.image_classifier import classify_image
-from utils.image_loader import load_image_from_db   # ✅ NEW
-from nlp.image_classifier import classify_image_from_pil  # ✅ NEW
-
-
-db = MongoDB()
-raw_records = db.get_raw()
-
 for record in raw_records:
     description = record.get("description", "")
     image_ids = record.get("image_ids", [])   # ✅ from DB
@@ -46,5 +36,3 @@ for record in raw_records:
     }
 
     db.insert_processed(processed)
-
-print("✔ Multimodal threat analysis completed")

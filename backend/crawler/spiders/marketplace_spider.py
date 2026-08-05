@@ -88,6 +88,17 @@ class MarketSpider(scrapy.Spider):
         # ❌ Skip pages with no biohacking relevance
         if not matched_keywords:
             return
+        
+        # 🖼️ Extract images (safe + limited)
+        image_urls = response.css("img::attr(src)").getall()
+
+        image_urls = [
+            response.urljoin(img)
+            for img in image_urls
+            if img and not img.startswith("data:")
+        ]
+
+        image_urls = image_urls[:20]   # limit for performance
 
         # ✅ Yield ONE item per relevant page
         yield MarketItem(
@@ -96,6 +107,7 @@ class MarketSpider(scrapy.Spider):
             price="N/A",
             vendor=response.url.split("/")[2],
             url=response.url + "#biohacking",
+            images=image_urls
         )
 
         # 🔁 Follow internal links (controlled)
